@@ -5,6 +5,11 @@ import mongoose from 'mongoose';
 // 👇 Node
 import { get } from 'http';
 import { get as gets } from 'https';
+// 👇 Entities
+import Notification from '../entity/Notification';
+import User from '../entity/User';
+import Message from '../entity/Message';
+import Post from '../entity/Post';
 // 👇 Constants, Helpers & Types
 import { ImageProjection, ImageSchema, KeyValue, MediaProjection, MediaSchema, Reacted, SocketMessage } from '../types';
 import { AuthType, ModelType, NotificationType, Publish, ResponseCode, UploadType, Gender } from '../types/enum';
@@ -168,4 +173,19 @@ export const getMediaFile = async (
   });
 
   return file;
+};
+
+// 👇 websocket message helpers
+export const constructMessage = (message: SocketMessage) => JSON.stringify(message);
+export const deconstructMessage = (message: string) => JSON.parse(message) as SocketMessage;
+
+// 👇 update user last seen on session close
+export const updateLastSeen = async (id: string) => {
+  try {
+    const active = new Date();
+    // 👇 executes UPDATE user SET active = date WHERE id = 'id'
+    await entityManager.update(User, { id }, { active });
+  } catch (error) {
+    // console.log('\nError Last Seen', { error });
+  }
 };
