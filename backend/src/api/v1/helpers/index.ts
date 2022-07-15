@@ -10,6 +10,9 @@ import Notification from '../entity/Notification';
 import User from '../entity/User';
 import Message from '../entity/Message';
 import Post from '../entity/Post';
+// 👇 Services
+import pubsub from '../services/pubsub';
+import { socket } from '../services/client';
 // 👇 Constants, Helpers & Types
 import { ImageProjection, ImageSchema, KeyValue, MediaProjection, MediaSchema, Reacted, SocketMessage } from '../types';
 import { AuthType, ModelType, NotificationType, Publish, ResponseCode, UploadType, Gender } from '../types/enum';
@@ -187,5 +190,67 @@ export const updateLastSeen = async (id: string) => {
     await entityManager.update(User, { id }, { active });
   } catch (error) {
     // console.log('\nError Last Seen', { error });
+  }
+};
+
+const getNotifications = async (type: NotificationType, from: Partial<User>, identifier: string, skip: number) =>
+  await entityManager.find(Notification, {
+    relations: {
+      from: true,
+      to: true,
+    },
+    where: { identifier, from: { id: from.id }, type },
+    take: maxLimit,
+    skip,
+  });
+
+export const createNotification = async (
+  type: NotificationType,
+  from: Partial<User>,
+  identifier: string,
+  to?: Partial<User>,
+) => {
+  if (type === NotificationType.POST_CREATE) {
+    // 👇 notification of post created to users following the post creator
+    await entityManager.query(
+      `INSERT INTO notifications ("to", "from", "type", "identifier")
+      ${entityManager
+        .createQueryBuilder()
+        .select('follow.user', 'to')
+        .addSelect(`'${from.id}'`, 'from')
+        .addSelect(`'${type}'`, 'type')
+        .addSelect(`'${identifier}'`, 'identifier')
+        .from('followers', 'follow')
+        .where(`follow.following = '${from.id}'`)
+        .getQuery()}
+      `,
+    );
+
+    // 👇 publish notification to followers on a certain interval
+    let skip = 0;
+    let notifications = await getNotifications(NotificationType.POST_CREATE, from, identifier, skip);
+    while (notifications.length) {
+      for (const notification of notifications) {
+        await pubsub.publish(Publish.NOTIFICATION, {
+          [Publish.NOTIFICATION]: notification,
+        });
+      }
+      await sleep(0.2);
+      skip += notifications.length;
+      notifications = await getNotifications(NotificationType.POST_CREATE, from, identifier, skip);
+    }
+  } else {
+    const notification = await new Notification({
+      from: { id: from.id, name: from.name },
+      ...(to && {
+        to: { id: to.id },
+      }),
+      type,
+      identifier,
+    }).save();
+
+    await pubsub.publish(Publish.NOTIFICATION, {
+      [Publish.NOTIFICATION]: notification,
+    });
   }
 };
