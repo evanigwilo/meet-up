@@ -254,3 +254,38 @@ export const createNotification = async (
     });
   }
 };
+
+export const createReacted = (
+  message: Message,
+  user: Partial<User>,
+  reaction?: Reacted['reaction'],
+): Partial<Reacted> => ({
+  from: message.from.id,
+  to: message.to.id,
+  user: user.id,
+  message: message.id,
+  deleted: !Boolean(reaction),
+  reaction,
+});
+
+export const findMessage = async (id: string, from: string, to?: string): Promise<Message | null> => {
+  const where = to
+    ? [
+        { from: { id: from }, id },
+        { to: { id: to }, id },
+      ]
+    : {
+        id,
+        from: { id: from },
+      };
+
+  const message = await entityManager.findOne(Message, {
+    relations: {
+      from: true,
+      to: true,
+    },
+    where,
+  });
+
+  return message;
+};
