@@ -6,6 +6,12 @@ import { ILike, SelectQueryBuilder } from 'typeorm';
 // 👇 Entities
 import Post from '../../entity/Post';
 import User from '../../entity/User';
+// 👇 Resolvers
+import postResolver from './postResolver';
+import messageResolver from './messageResolver';
+import notificationResolver from './notificationResolver';
+import mediaResolver from './mediaResolver';
+import usersResolvers from './userResolver';
 // 👇 Constants, Helpers & Types
 import { maxLimit } from '../../constants';
 import { entityManager } from '../../helpers';
@@ -224,4 +230,19 @@ export default {
       return null;
     },
   }),
+  Query: {
+    ...usersResolvers.Query,
+    ...postResolver.Query,
+    ...messageResolver.Query,
+    ...notificationResolver.Query,
+    ...mediaResolver.Query,
+  },
+  Mutation: {
+    ...usersResolvers.Mutation,
+    ...postResolver.Mutation,
+    ...messageResolver.Mutation,
+  },
+  Subscription: {
+    ...notificationResolver.Subscription,
+  },
 };
