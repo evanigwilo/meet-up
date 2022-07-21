@@ -5,11 +5,15 @@ import mongoose from 'mongoose';
 // 👇 Node
 import { get } from 'http';
 import { get as gets } from 'https';
+// 👇 Express
+import { NextFunction, Request, Response } from 'express';
 // 👇 Entities
 import Notification from '../entity/Notification';
 import User from '../entity/User';
 import Message from '../entity/Message';
 import Post from '../entity/Post';
+// 👇 Multer
+import { MulterError } from 'multer';
 // 👇 Services
 import pubsub from '../services/pubsub';
 import { socket } from '../services/client';
@@ -288,4 +292,128 @@ export const findMessage = async (id: string, from: string, to?: string): Promis
   });
 
   return message;
+};
+
+// 👇 delete canceled image uploads on abort
+export const deleteCanceledImageUploads = async (collection: string, canceledUploads: string[]) => {
+  const imageDb = mongoGetDb('image');
+
+  for (let id = canceledUploads.pop(); id !== undefined; id = canceledUploads.pop()) {
+    for (let i = 0; i < deleteIterations; i++) {
+      try {
+        await imageDb?.db.collection(collection).deleteOne({ filename: id });
+      } catch {}
+
+      await sleep(3);
+    }
+  }
+};
+
+// 👇 delete canceled media uploads on abort
+export const deleteCanceledMediaUploads = async (canceledUploads: string[]) => {
+  // console.log({ 'Total Deletes': canceledUploads.length });
+  const mediaDb = mongoGetDb('media');
+
+  for (let tempId = canceledUploads.pop(); tempId !== undefined; tempId = canceledUploads.pop()) {
+    for (let i = 0; i < deleteIterations; i++) {
+      /*
+        console.log({
+          [tempId]: i,
+          'Total Deletes': canceledUploads.length,
+          total: (await mediaDb.db.collection(tempId + '.chunks').stats()).count,
+        });
+      */
+      try {
+        await mediaDb?.db.collection(tempId + '.chunks').drop();
+      } catch {}
+      try {
+        await mediaDb?.db.collection(tempId + '.files').drop();
+      } catch {}
+      // await bucket.drop();
+      await sleep(3);
+    }
+  }
+};
+
+// 👇 check post or message body exist after media is uploaded
+export const uploadCheck = async (args: {
+  type: UploadType;
+  identifier: string;
+  userId: string;
+  cancelUpload: () => void;
+}) => {
+  const { type, identifier, userId, cancelUpload } = args;
+
+  try {
+    await socket.del(identifier);
+    await socket.setex(identifier, expire5mins, type);
+    // 👇 check post or message reference to upload exist after 5 mins
+    await sleep(secsToMs(expire5mins));
+
+    if (type === UploadType.MESSAGE_IMAGE || type === UploadType.MESSAGE_MEDIA) {
+      const message = await entityManager.findOne(Message, {
+        relations: {
+          from: true,
+        },
+        where: { id: identifier, from: { id: userId } },
+      });
+      if (!message) {
+        cancelUpload();
+      }
+    } else {
+      const post = await entityManager.findOne(Post, {
+        relations: {
+          parent: true,
+        },
+        where: {
+          id: identifier,
+          createdBy: { id: userId },
+        },
+      });
+      if (!post) {
+        cancelUpload();
+      } else if (type === UploadType.REPLY_IMAGE || (type === UploadType.REPLY_MEDIA && !post.parent)) {
+        // 👇 delete reply with no reference to a post
+        await entityManager.delete(Post, { id: identifier });
+        cancelUpload();
+      }
+    }
+  } catch (error) {
+    cancelUpload();
+  }
+};
+
+export const uploadError = (error: any, res: Response) => {
+  const { code, message } = error as MulterError & Error;
+  const response = res.status(400).json({
+    code: code || ResponseCode.GENERIC_ERROR,
+    message,
+  });
+  if (testing) {
+    // 👇 no destroy to prevent 'write EPIPE' error
+    return response;
+  } else {
+    // 👇 destroy request to prevent subsequent file upload
+    return response.destroy(Error('ok'));
+  }
+};
+
+export const uploadProgress = (req: Request, res: Response, next: NextFunction) => {
+  const fileSize = Number(req.headers['content-length']) || 0;
+  let totalSize = 0;
+  // 👇 initialize multer variables if not initialized by previous middleware
+  req.multer = req.multer || {};
+  // 👇 set event listener
+  req.on('data', (chunk: Buffer) => {
+    totalSize += chunk.length;
+    /*
+      console.log({
+        percentage: ((100 * totalSize) / fileSize).toFixed(2),
+        prevChunk: formatBytes(totalSize),
+        file_size: formatBytes(fileSize),
+      });
+     */
+  });
+
+  next();
 };
