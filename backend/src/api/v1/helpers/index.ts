@@ -17,6 +17,11 @@ import { MulterError } from 'multer';
 // 👇 Services
 import pubsub from '../services/pubsub';
 import { socket } from '../services/client';
+// 👇 Routes
+import { passportInit, passportSession } from '../routes/OAuth';
+// 👇 Middleware
+import { auth } from '../middleware/auth';
+import session from '../middleware/session';
 // 👇 Constants, Helpers & Types
 import { ImageProjection, ImageSchema, KeyValue, MediaProjection, MediaSchema, Reacted, SocketMessage } from '../types';
 import { AuthType, ModelType, NotificationType, Publish, ResponseCode, UploadType, Gender } from '../types/enum';
@@ -417,3 +422,135 @@ export const uploadProgress = (req: Request, res: Response, next: NextFunction) 
 
   next();
 };
+
+// 👇 mongo database connection helper
+export const mongoConnect = async () => {
+  const connect = (db: string) =>
+    new Promise<mongoose.Connection>((resolve, reject) => {
+      const connection = mongoose.createConnection(mongoUrl(db), {
+        serverSelectionTimeoutMS: 3000,
+        // socketTimeoutMS: 3000,
+        // heartbeatFrequencyMS: 3000,
+        keepAlive: true,
+      });
+
+      connection.once('open', () => {
+        console.log(`Connected to MongoDB(db:${db})`);
+        resolve(connection);
+      });
+
+      connection.on('error', (err) => {
+        console.log(`Waiting for MongoDB(db:${db})`);
+        connection.destroy().then(() => reject());
+      });
+
+      connection.on('disconnected', () => {
+        // console.log(`Disconnected MongoDB(db:${db})`);
+      });
+    });
+
+  const recreate = async (connection: mongoose.Connection) => {
+    const db = connection.db.databaseName;
+    console.log(`Waiting for MongoDB(db:${db})`);
+    connection.destroy().then(() => reconnect(db));
+  };
+
+  const reconnect = async (db: string) => {
+    try {
+      const connection = await connect(db);
+      // 👇 no reconnection if testing
+      if (testing) {
+        return;
+      }
+      connection.on('disconnected', () => recreate(connection)).on('error', () => recreate(connection));
+    } catch (error) {
+      // 👇 fail test on first error connecting to mongo database
+      if (testing) {
+        throw new Error(testDbConnectionFailed);
+      }
+      reconnect(db);
+    }
+  };
+
+  for (const db in mongoDbs) {
+    await reconnect(mongoDbs[db as keyof typeof mongoDbs]);
+  }
+
+  // 👇 connect to all mongo databases defined in 'mongoDbs'
+  // Object.values(mongoDbs).forEach((db) => reconnect(db));
+
+  /*
+  const mongoUrl = mongoUrl(MONGO_INITDB_DATABASE);
+
+  const connect = () =>
+    mongoose
+      .connect(mongoUrl, {
+        // socketTimeoutMS: 3000,
+        // heartbeatFrequencyMS: 3000,
+        serverSelectionTimeoutMS: 3000,
+      })
+      .catch(() => undefined);
+
+  mongoose.connection.on('connected', () => console.log('Connected to MongoDB'));
+  mongoose.connection.on('disconnected', () => console.log('Waiting for MongoDB'));
+  mongoose.connection.on('error', () => connect());
+
+  connect();
+*/
+};
+
+// 👇 postgres database connection helper
+export const postgresConnect = async (connected = true, interval = 0) => {
+  // 👇 reconnect or check connection every 3 secs
+  if (interval > 0) {
+    await sleep(interval);
+  } else {
+    interval = 3;
+  }
+  try {
+    if (dataSource.isInitialized) {
+      // 👇  Keep alive workaround
+      try {
+        await entityManager.query('SELECT 1');
+      } catch {
+        await dataSource.driver.connect();
+      }
+    } else {
+      await dataSource.initialize();
+    }
+    if (connected) {
+      console.log(`Connected to PostgresDB(db:${dataSource.driver.database})`);
+    }
+    if (!testing) {
+      postgresConnect(false, interval);
+    }
+  } catch (error) {
+    // 👇 fail test on first error postgres to redis client
+    if (testing) {
+      throw new Error(testDbConnectionFailed);
+    } else {
+      console.log('Waiting for PostgresDB');
+      postgresConnect(false, interval);
+    }
+  }
+};
+
+// 👇 get session for websocket
+export const wsSession = (req: Request) =>
+  new Promise<Express.User | undefined>((resolve) => {
+    const res = {} as Response;
+    const user = auth(req);
+
+    if (user) {
+      resolve(user);
+    } else {
+      // 👇 use same session parser
+      session(req, res, () => {
+        passportInit(req, res, () => {
+          passportSession(req, res, () => {
+            resolve(auth(req));
+          });
+        });
+      });
+    }
+  });

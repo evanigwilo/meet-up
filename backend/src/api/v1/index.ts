@@ -4,3 +4,8 @@ dotenv.config({ allowEmptyValues: true });
 
 // 👇 this package is used to parse decorators for building sql queries.
 import 'reflect-metadata';
+// 👇 Constants, Helpers & Types
+import { startApolloServer } from './graphql';
+
+// 👇 server startup
+startApolloServer();
