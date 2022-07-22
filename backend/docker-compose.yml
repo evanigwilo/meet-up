@@ -1,0 +1,87 @@
+# version is now using "compose spec"
+# v2 and v3 are now combined!
+# docker-compose v1.27+ required
+version: "3"
+
+services:
+  redis:
+    container_name: redis-db
+    image: redis:5.0-alpine3.10
+    volumes:
+      - redis-data:/data
+      - ./healthchecks:/healthchecks:ro
+    healthcheck:
+      test: /healthchecks/redis.sh
+      # check for 1 min before considered unhealthy
+      interval: 3s
+      retries: 20
+    ports:
+      - ${REDIS_DB_PORT}:${REDIS_DB_PORT}
+    networks:
+      - back-tier
+    restart: unless-stopped # always
+
+  mongo:
+    container_name: mongo-db
+    image: mongo:4.4.13
+    volumes:
+      - mongo-db:/data/db
+      - mongo-config:/data/configdb
+      - ./healthchecks:/healthchecks:ro
+    healthcheck:
+      test: [ "CMD", "sh", "healthchecks/mongo.sh" ]
+      # check for 1 min before considered unhealthy
+      interval: 3s
+      retries: 20
+    ports:
+      - ${MONGO_DB_PORT}:${MONGO_DB_PORT}
+    networks:
+      - back-tier
+    environment:
+      MONGO_INITDB_DATABASE: ${MONGO_INITDB_DATABASE}
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_DB_PORT: ${MONGO_DB_PORT}
+    restart: unless-stopped # always
+
+  postgres:
+    container_name: postgres-db
+    image: postgres:9.5
+    # env_file: .env
+    environment:
+      POSTGRES_USER: ${DATABASE_USER}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD}
+      POSTGRES_DB: ${DATABASE_DB}
+    volumes:
+      - postgres-db:/var/lib/postgresql/data
+      - ./healthchecks:/healthchecks:ro
+    healthcheck:
+      test: /healthchecks/postgres.sh
+      # check for 1 min before considered unhealthy
+      interval: 3s
+      retries: 20
+    ports:
+      - ${DATABASE_PORT}:5432
+    networks:
+      - back-tier
+    restart: unless-stopped # always
+
+volumes:
+  mongo-db:
+  postgres-db:
+
+  redis-data:
+    name: meet-up-backend_redis-data
+
+  mongo-config:
+    name: meet-up-backend_mongo-config
+    #
+    # healthcheck:
+    #   name: backend_healthcheck
+    #   driver_opts:
+    #     o: bind
+    #     device: ${PWD}/healthchecks
+    #     type: none
+
+networks:
+  back-tier:

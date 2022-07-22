@@ -1,0 +1,24 @@
+version: "3"
+
+# NOTE: include -f docker-compose.dev.yml compose file before this file
+services:
+  api-server:
+    build:
+      context: .
+      args:
+        # reference in the Dockerfile using ARG
+        NODE_ENV: testing
+    # healthcheck:
+    #   disable: true
+    restart: 'no'
+    # with extra args when running tests based on environment
+    command: yarn test ${TEST_ARGS}
+
+volumes:
+  mongo-db:
+    name: meet-up-backend_mongo-db-test
+    external: false
+
+  postgres-db:
+    name: meet-up-backend_postgres-db-test
+    external: false

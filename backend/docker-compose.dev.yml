@@ -1,0 +1,55 @@
+version: "3"
+
+services:
+  api-server:
+    container_name: api-server
+    build:
+      context: .
+      args:
+        # reference in the Dockerfile using ARG
+        NODE_ENV: development
+    volumes:
+      - ./src:/backend/src:ro
+      - ./healthchecks:/healthchecks:ro
+      # - ./backend/node_modules
+    healthcheck:
+      # run check by executing script as a module with the node command
+      test: "cat healthchecks/api/v1/server.js | node --input-type=module"
+      # check for 3 minis before considered unhealthy
+      interval: 10s
+      retries: 18
+    environment:
+      # 172.17.0.1 -> docker-host in Docker’s default-network
+      DATABASE_HOST: host.docker.internal
+      REDIS_DB_HOST: redis-db
+      MONGO_DB_HOST: mongo-db
+      # OAuth configurations with values from from external env file
+      OAUTH_GOOGLE_CLIENTID: ${OAUTH_GOOGLE_CLIENTID}
+      OAUTH_GOOGLE_CLIENTSECRET: ${OAUTH_GOOGLE_CLIENTSECRET}
+      FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID}
+      FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    ports:
+      - ${SERVER_PORT}:${SERVER_PORT}
+    networks:
+      - back-tier
+    # for consistent connection to the host on all platforms (Mac, Windows, and Linux)
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+
+volumes:
+  # external: true -> keeps volumes when destroyed using docker-compose down -v
+  mongo-db:
+    name: meet-up-backend_mongo-db-dev
+    external: true
+
+  postgres-db:
+    name: meet-up-backend_postgres-db-dev
+    external: true

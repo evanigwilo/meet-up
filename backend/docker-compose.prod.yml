@@ -1,0 +1,113 @@
+version: "3"
+
+# environment variables stored in container
+x-environment-variables:
+  &api-environment
+  REDIS_DB_HOST: redis-db
+  MONGO_DB_HOST: mongo-db
+  DATABASE_HOST: host.docker.internal
+  NODE_ENV: production
+  # OAuth configurations with values read from external env file
+  OAUTH_GOOGLE_CLIENTID: ${OAUTH_GOOGLE_CLIENTID}
+  OAUTH_GOOGLE_CLIENTSECRET: ${OAUTH_GOOGLE_CLIENTSECRET}
+  FACEBOOK_CLIENT_ID: ${FACEBOOK_CLIENT_ID}
+  FACEBOOK_CLIENT_SECRET: ${FACEBOOK_CLIENT_SECRET}
+  # Session configurations from external env file
+  SESSION_ID: ${SESSION_ID}
+  SESSION_SECRET: ${SESSION_SECRET}
+  # Nginx configurations from external env file
+  NGINX_SERVER_PORT: ${NGINX_SERVER_PORT}
+
+services:
+  api-server-1:
+    &api-server
+    container_name: api-server-1
+    image: uvclassic/meet-up:api-server
+    # build:
+    #   context: ${PWD}/backend
+    #   args:
+    #     # production environment wont install dev dependencies
+    #     NODE_ENV: production
+    volumes:
+      - ${PWD}/backend/healthchecks:/healthchecks:ro
+      - ${PWD}/backend/src:/backend/src:ro
+    healthcheck:
+      # run check by executing script as a module with the node command
+      test: "cat healthchecks/api/v1/server.js | node --input-type=module"
+      # check for 3 minis before considered unhealthy
+      interval: 10s
+      retries: 18
+    # env file will be included in the container
+    # env_file: .env
+    # env_file:
+    #   - ./.env
+    environment:
+      <<: *api-environment
+      SERVER_PORT: ${NGINX_SERVER_PORT_1}
+    depends_on:
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    # no port mapping to allow communication only through Nginx port
+    networks:
+      - back-tier
+    # for consistent connection to the host on all platforms (Mac, Windows, and Linux)
+    extra_hosts:
+      - host.docker.internal:host-gateway
+    restart: unless-stopped
+    # deploy:
+    #   mode: replicated
+    #   replicas: 3
+    #   labels: [APP=SERVER]
+    #   update_config:
+    #     parallelism: 2
+    #     delay: 3s
+    #   restart_policy:
+    #     condition: on-failure
+    #     delay: 3s
+    #     max_attempts: 3
+    #     window: 120s
+  api-server-2:
+    <<: *api-server
+    container_name: api-server-2
+    environment:
+      <<: *api-environment
+      SERVER_PORT: ${NGINX_SERVER_PORT_2}
+    depends_on:
+      api-server-1:
+        condition: service_healthy
+  #
+  # nginx:
+  #   container_name: nginx-server
+  #   restart: always
+  #   # build:
+  #   #   context: ./nginx
+  #   image: nginx:mainline-alpine
+  #   volumes:
+  #     - "./nginx/templates:/etc/nginx/templates"
+  #   environment:
+  #     NGINX_HOST: ${SERVER_HOST}
+  #     NGINX_SERVER_1: api-server-1:${NGINX_SERVER_PORT_1}
+  #     NGINX_SERVER_2: api-server-2:${NGINX_SERVER_PORT_2}
+  #   depends_on:
+  #     api-server-1:
+  #       condition: service_healthy
+  #     api-server-2:
+  #       condition: service_healthy
+  #   ports:
+  #     - 80:80
+  #   networks:
+  #     - back-tier
+
+volumes:
+  # external: true -> keeps volumes when destroyed using docker-compose down -v 
+  mongo-db:
+    name: meet-up-backend_mongo-db-prod
+    external: true
+
+  postgres-db:
+    name: meet-up-backend_postgres-db-prod
+    external: true
