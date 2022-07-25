@@ -1,5 +1,7 @@
 // 👇 Typeorm
 import { DataSource } from 'typeorm';
+// 👇 Faker
+import { faker } from '@faker-js/faker';
 // 👇 Mongoose
 import mongoose from 'mongoose';
 // 👇 Node
@@ -554,3 +556,281 @@ export const wsSession = (req: Request) =>
       });
     }
   });
+
+export const randomWords = () =>
+  faker.random.words(
+    faker.datatype.number({
+      min: 3,
+      max: 10,
+    }),
+  );
+
+export const createPost = async (
+  user: User,
+  save = true,
+  args?: Partial<{
+    media: string;
+    likes: User[];
+    parent: Post;
+    createdDate: Date;
+  }>,
+) => {
+  const post = new Post({
+    id: faker.helpers.unique(faker.datatype.uuid),
+    body: randomWords(),
+    createdBy: user,
+    stats: {
+      likes: 0,
+      comments: 0,
+      liked: 0,
+    },
+    likes: [],
+    parent: args?.parent,
+    media: args?.media,
+    createdDate: args?.createdDate,
+  });
+
+  if (save) {
+    await entityManager.insert(Post, post);
+    const likes = args?.likes;
+    if (likes) {
+      likes.forEach((like) => post.likes.push({ id: like.id }));
+      await entityManager.save(Post, post);
+    }
+  }
+
+  return post;
+};
+
+export const createMessage = async (
+  from: User,
+  to: User,
+  save = true,
+  args?: Partial<{
+    missed: boolean;
+    deleted: boolean;
+    media: string;
+    createdDate: Date;
+  }>,
+) => {
+  const missed = args?.missed;
+
+  const message = new Message({
+    id: faker.helpers.unique(faker.datatype.uuid),
+    from,
+    to,
+    body: missed ? missedVideoCall : randomWords(),
+    missed,
+    media: args?.media,
+    deleted: args?.deleted,
+    createdDate: args?.createdDate,
+  });
+
+  if (save) {
+    await entityManager.insert(Message, message);
+  }
+
+  return message;
+};
+
+export const createUser = async (
+  save = true,
+  args?: Partial<{
+    username: string;
+    password: string;
+    name: string;
+    createdDate: Date;
+    gender: Gender;
+    auth: AuthType;
+    active: Date;
+  }>,
+) => {
+  const user = new User({
+    id: faker.helpers.unique(faker.datatype.uuid),
+    username: args?.username || faker.helpers.unique(faker.random.alphaNumeric, [5]),
+    email: faker.helpers.unique(faker.internet.email, []),
+    name: args?.name || faker.helpers.unique(faker.name.fullName),
+    password: args?.password || faker.internet.password(6),
+    createdDate: args?.createdDate,
+    gender: args?.gender,
+    auth: args?.auth || AuthType.PASSWORD,
+    active: args?.active,
+  });
+
+  if (save) {
+    const password = user.password;
+    // 👇 updates the 'createUser' with saved values from database
+    await entityManager.save(User, user);
+    user.password = password;
+    /*
+    if (testing) {
+      expect(user.notification).toBeTruthy();
+    }
+    */
+  }
+  /*
+  if (testing) {
+    expect(user.bio).toBeFalsy();
+    expect(user.active).toBeFalsy();
+  }
+  */
+
+  return user;
+};
+
+export const bulkUsers = async (total: number, name?: string, users?: User[]) => {
+  users = users || [];
+  for (let i = 0; i < total; i++) {
+    const dayOffset = msOneDay * i;
+    const createdDate = new Date(testTime - dayOffset);
+    users.push(await createUser(false, { name, createdDate }));
+  }
+  await entityManager.createQueryBuilder().insert().into(User).values(users).execute();
+
+  return users;
+};
+
+export const bulkUserFollowing = async (user: User, total: number, users?: User[]) => {
+  users = users || (await bulkUsers(total));
+
+  user.following = [];
+  for (let i = 0; i < total; i++) {
+    user.following.push(users[i]);
+  }
+  await user.save();
+
+  return users;
+};
+
+export const bulkUserFollowers = async (user: User, total: number, users?: User[]) => {
+  users = users || (await bulkUsers(total));
+
+  let ids = '';
+  users.forEach((user, index) => {
+    const id = "'" + user.id + "'";
+    const split = index === total - 1 ? '' : ', ';
+    ids += id + split;
+  });
+
+  if (!users.length) {
+    return users;
+  }
+
+  await entityManager.query(
+    `INSERT INTO followers ("user", "following")
+    ${entityManager
+      .createQueryBuilder(User, 'user')
+      .select('user.id', 'user')
+      .addSelect(`'${user.id}'`, 'following')
+      .where(`user.id IN (${ids})`)
+      .getQuery()}
+    `,
+  );
+
+  return users;
+};
+
+export const bulkUserPosts = async (
+  user: User,
+  total: number,
+  args?: Partial<{
+    clear: boolean;
+    media: string;
+    parent: Post;
+    likes: User[];
+  }>,
+) => {
+  const parent = args?.parent;
+  const likes = args?.likes;
+
+  if (args?.clear) {
+    // 👇 cascade delete
+    await entityManager.delete(Post, parent ? { parent } : {});
+  }
+  const posts: Post[] = [];
+  let ids = '';
+  for (let i = 0; i < total; i++) {
+    const dayOffset = msOneDay * i;
+    const createdDate = new Date(testTime - dayOffset);
+    posts.push(
+      await createPost(user, false, {
+        createdDate,
+        media: args?.media,
+        parent,
+      }),
+    );
+    if (!likes) {
+      continue;
+    }
+    const id = "'" + posts[i].id + "'";
+    const split = i === total - 1 ? '' : ', ';
+    ids += id + split;
+  }
+
+  await entityManager.createQueryBuilder().insert().into(Post).values(posts).execute();
+
+  if (likes) {
+    for (const like of likes) {
+      await entityManager.query(
+        `INSERT INTO likes ("postId", "userId")
+        ${entityManager
+          .createQueryBuilder(Post, 'post')
+          .select('post.id', 'postId')
+          .addSelect(`'${like.id}'`, 'userId')
+          .where(`post.id IN (${ids})`)
+          .getQuery()}
+        `,
+      );
+    }
+  }
+
+  return posts;
+};
+
+export const bulkUserMessages = async (
+  from: User,
+  to: User[],
+  total: number,
+  args?: Partial<{
+    clear: boolean;
+    missed: boolean;
+    deleted: boolean;
+    media: string;
+    startTime: number;
+  }>,
+) => {
+  if (args?.clear) {
+    // 👇 cascade delete
+    await entityManager.delete(Message, {});
+  }
+  const messages: Message[] = [];
+  let startTime = args?.startTime || testTime;
+
+  /*
+    Sending message to users [A, B]:
+    from -> A
+    from -> B
+    from -> A
+    from -> B
+    .
+    .
+    .
+  */
+  for (let i = 0, days = 0; i < total; i++) {
+    for (const user of to) {
+      startTime += msOneDay;
+      const createdDate = new Date(startTime);
+      messages.push(
+        await createMessage(from, user, false, {
+          createdDate,
+          media: args?.media,
+          deleted: args?.deleted,
+          missed: args?.missed,
+        }),
+      );
+    }
+  }
+  await entityManager.createQueryBuilder().insert().into(Message).values(messages).execute();
+
+  return { startTime, messages };
+};
