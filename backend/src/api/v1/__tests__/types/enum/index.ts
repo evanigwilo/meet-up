@@ -1,0 +1,4 @@
+export enum TEST_STATUS {
+  START_SERVER = 'START SERVER',
+  STOP_SERVER = 'STOP SERVER',
+}
