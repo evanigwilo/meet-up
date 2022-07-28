@@ -181,6 +181,51 @@ export const httpRequest = async <T>(
   };
 };
 
+export const wsClient = (user: Partial<User>) => {
+  const ws = wsSocket.ws(`/?token=${user?.token}`).expectJson({
+    type: 'CONNECTION',
+    content: user?.id || '',
+    from: serverName,
+  });
+
+  return ws;
+};
+
+export const wsSend = async <T>(user: User, message: SocketMessage, match: {} | any[]) => {
+  let value: T | null = null;
+
+  await wsClient(user)
+    .sendText(helpers.constructMessage(message))
+    .expectText((data) => {
+      const deconstruct = helpers.deconstructMessage(data);
+      expect(deconstruct).toMatchObject(match);
+      value = deconstruct.content as T;
+    })
+    .close()
+    .expectClosed();
+
+  return value as unknown as T;
+};
+
+export const wsToken = async (user: User, type: 'MESSAGE' | UploadType) => {
+  const { id } = await wsSend<KeyValue>(
+    user,
+    {
+      type,
+      to: serverName,
+      content: {},
+    },
+    {
+      type,
+      from: user.id,
+      content: {
+        id: expect.any(String),
+      },
+    },
+  );
+  return id;
+};
+
 export const getCookieValue = (cookie: string, key: 'Path=' | 'Expires=' | 'HttpOnly' | string) => {
   /*
     'sid=s%3A0CbvZxykCzSRSWzxnDO1YFvH-cm3cNLl.XjmxhNdWl62CvQRiGV67vCcolPGoi3A867xLKUyHrV0; Path=/v1; Expires=Wed, 08 Feb 2022 00:50:58 GMT; HttpOnly'
@@ -195,6 +240,38 @@ export const getCookieValue = (cookie: string, key: 'Path=' | 'Expires=' | 'Http
   return value;
 };
 
+export const testError = (
+  request: GraphQLRequest,
+  code: ResponseCode,
+  query: GqlQueries | GqlMutations | string[],
+  cookie = false,
+) => {
+  expect(request.body).toBeFalsy();
+  expect(request.GQLError?.message).toBe(code);
+  if (query instanceof Array) {
+    query.forEach((item) => {
+      expect(request.GQLError?.extensions).toHaveProperty(item);
+    });
+  } else {
+    expect(request.GQLError?.extensions).toHaveProperty(query);
+  }
+  expect(request.status).toBe(200);
+  testCookie(request.headers, cookie);
+};
+
+export const testSuccess = (request: GraphQLRequest, body = true) => {
+  expect(request.GQLError || request.HTTPError).toBeFalsy();
+  expect(request.status).toBe(200);
+  if (body) {
+    expect(request.body).toBeTruthy();
+  }
+};
+
+export const testUnauthenticated = async (query: GqlQueries | GqlMutations, variables?: Variables) => {
+  const requestError = await graphQLRequest<User>(query, variables);
+  testError(requestError, ResponseCode.UNAUTHENTICATED, query);
+};
+
 export const testCookie = (headers: IncomingHttpHeaders, valid: boolean) => {
   const cookies = headers['set-cookie'];
   const value = cookies && getCookieValue(cookies[0], `${SESSION_ID}=`);
@@ -203,6 +280,31 @@ export const testCookie = (headers: IncomingHttpHeaders, valid: boolean) => {
   } else {
     expect(value).toBeFalsy();
   }
+};
+
+export const isMimeType = (type: 'image' | 'video' | 'audio', value?: string) => {
+  if (!value) {
+    return false;
+  }
+  switch (type) {
+    case 'image':
+      return /^image/i.test(value);
+
+    case 'video':
+      return /^video/i.test(value);
+
+    case 'audio':
+      return /^audio/i.test(value);
+    default:
+      return false;
+  }
+};
+
+export const mockDate = async (callback: () => Promise<void>) => {
+  const date = jest.fn<Date, any[]>().mockReturnValue(testDate);
+  (global.Date as unknown as typeof date) = date;
+  await callback();
+  global.Date = realDate;
 };
 
 export const loginUser = async (user: User) => {
@@ -219,6 +321,81 @@ export const loginUser = async (user: User) => {
   testCookie(request.headers, true);
 
   return request.headers;
+};
+
+export const authenticateUser = async (headers: IncomingHttpHeaders, user?: User) => {
+  const request = await graphQLRequest<User>('auth', undefined, headers);
+  const body = request.body as User;
+  expect(body.token).toBeTruthy();
+  testSuccess(request);
+  testCookie(request.headers, true);
+  if (!user) {
+    expect(body.notifications).toEqual([{ type: 'CONVERSATIONS', total: 0 }]);
+  }
+  return body;
+};
+
+export const expectImageFile = async (
+  imageDb: mongoose.Connection | undefined,
+  collection: ModelType,
+  filename: string,
+  user: User,
+  exist = true,
+) => {
+  const imageFile = await helpers.getImageFile(imageDb, collection, {
+    filename,
+    'metadata.userId': user.id,
+  });
+  if (exist) {
+    expect(imageFile).toMatchObject<Partial<ImageSchema>>({
+      _id: expect.any(mongoose.Types.ObjectId),
+      filename,
+      metadata: expect.objectContaining<Partial<ImageSchema['metadata']>>({
+        userId: user.id,
+        username: user.username,
+        auth: user.auth,
+      }),
+    });
+  } else {
+    expect(imageFile).toBe(null);
+  }
+
+  return imageFile;
+};
+
+export const expectImageSuccess = (request: HttpRequest, buffer = false) => {
+  if (buffer) {
+    expect(Buffer.isBuffer(request.body)).toBe(true);
+    expect(isMimeType('image', request.headers['content-type'])).toBe(true);
+  } else {
+    expect(request.body).toMatchObject({ code: ResponseCode.SUCCESS });
+  }
+  expect(request.status).toEqual(200);
+};
+
+export const uploadImageFile = async (
+  type:
+    | 'MESSAGE'
+    | Extract<UploadType, UploadType.MESSAGE_IMAGE | UploadType.POST_IMAGE | UploadType.REPLY_IMAGE>
+    | 'AVATAR',
+  category: MediaCategory,
+) => {
+  let user = await helpers.createUser();
+  const headers = await loginUser(user);
+  user = await authenticateUser(headers);
+  const avatarType = type === 'AVATAR';
+  const imageId = avatarType ? user.id : await wsToken(user, type);
+  const route = avatarType ? `/image/${category}` : `/image/${category}/${imageId}`;
+
+  // 👇 Upload image
+  const request = await httpRequest('POST', route, headers, 'image');
+  expectImageSuccess(request);
+
+  return {
+    user,
+    headers,
+    imageId,
+  };
 };
 
 // 👇 queries helper
