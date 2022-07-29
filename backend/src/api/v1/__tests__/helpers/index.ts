@@ -272,6 +272,45 @@ export const testUnauthenticated = async (query: GqlQueries | GqlMutations, vari
   testError(requestError, ResponseCode.UNAUTHENTICATED, query);
 };
 
+export const testPagination = async <T extends { id?: string; message?: Message }>(
+  query: GqlQueries | GqlMutations,
+  value: T[],
+  variables: Variables,
+  headers?: IncomingHttpHeaders,
+) => {
+  let request = await graphQLRequest<T[]>(query, variables, headers);
+  let body = request.body;
+  // 👇 messages and conversations response comes in reverse order (newer at bottom)
+  const reverse = query === 'getConversations' || query === 'getMessages';
+  const index = reverse ? value.length - 1 : 0;
+  const limit = reverse ? maxLimit - 1 : maxLimit;
+
+  testSuccess(request);
+  expect(body).toHaveLength(maxLimit);
+  expect(query === 'getConversations' ? body?.[0].message?.id : body?.[0].id).toEqual(value[index].id);
+
+  variables.offset = maxLimit;
+  request = await graphQLRequest<T[]>(query, variables, headers);
+  body = request.body;
+  testSuccess(request);
+  expect(body).toHaveLength(maxLimit);
+  expect(query === 'getConversations' ? body?.[0].message?.id : body?.[0].id).toEqual(value[limit].id);
+
+  variables.offset = maxLimit * 2;
+  request = await graphQLRequest<T[]>(query, variables, headers);
+  body = request.body;
+  testSuccess(request);
+  expect(body).toHaveLength(0);
+
+  variables.offset = 0;
+  variables.limit = Math.floor(maxLimit / 2);
+  request = await graphQLRequest<T[]>(query, variables, headers);
+  body = request.body;
+  testSuccess(request);
+  expect(body).toHaveLength(variables.limit);
+  expect(query === 'getConversations' ? body?.[0].message?.id : body?.[0].id).toEqual(value[index].id);
+};
+
 export const testCookie = (headers: IncomingHttpHeaders, valid: boolean) => {
   const cookies = headers['set-cookie'];
   const value = cookies && getCookieValue(cookies[0], `${SESSION_ID}=`);
@@ -373,6 +412,26 @@ export const expectImageSuccess = (request: HttpRequest, buffer = false) => {
   expect(request.status).toEqual(200);
 };
 
+export const expectMediaSuccess = (request: HttpRequest, media: 'video' | 'audio', streaming = false) => {
+  if (streaming) {
+    expect(Buffer.isBuffer(request.body)).toBe(true);
+    expect(isMimeType(media, request.headers['content-type'])).toBe(true);
+    expect(request.headers['content-range']).toMatch(/^bytes 0-/i);
+    // 👇 partial content
+    expect(request.status).toEqual(206);
+  } else {
+    expect(request.body).toMatchObject({
+      id: expect.any(String),
+      file: expect.objectContaining({
+        filename: expect.any(String),
+        contentType: expect.stringContaining(media),
+        size: expect.any(Number),
+      }),
+    });
+    expect(request.status).toEqual(200);
+  }
+};
+
 export const uploadImageFile = async (
   type:
     | 'MESSAGE'
@@ -395,6 +454,28 @@ export const uploadImageFile = async (
     user,
     headers,
     imageId,
+  };
+};
+
+export const uploadMediaFile = async (
+  type: Extract<UploadType, UploadType.MESSAGE_MEDIA | UploadType.POST_MEDIA | UploadType.REPLY_MEDIA>,
+  category: Exclude<MediaCategory, MediaCategory.AVATAR>,
+  media: 'video' | 'audio',
+) => {
+  let user = await helpers.createUser();
+  const headers = await loginUser(user);
+  user = await authenticateUser(headers);
+  const mediaId = await wsToken(user, type);
+  const route = `/media/${category}/${mediaId}`;
+
+  // 👇 Upload media
+  const request = await httpRequest('POST', route, headers, media);
+  expectMediaSuccess(request, media);
+
+  return {
+    user,
+    headers,
+    mediaId,
   };
 };
 
