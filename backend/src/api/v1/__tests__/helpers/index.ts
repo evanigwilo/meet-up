@@ -346,6 +346,17 @@ export const mockDate = async (callback: () => Promise<void>) => {
   global.Date = realDate;
 };
 
+export const conversationUsers = async () => {
+  let from = await helpers.createUser();
+  let to = await helpers.createUser();
+  from = await authenticateUser(await loginUser(from));
+  to = await authenticateUser(await loginUser(to));
+  return {
+    from,
+    to,
+  };
+};
+
 export const loginUser = async (user: User) => {
   const prevCount = await entityManager.count(User);
   const request = await graphQLRequest<User>('login', {
