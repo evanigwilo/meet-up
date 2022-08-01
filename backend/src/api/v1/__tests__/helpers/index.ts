@@ -346,6 +346,12 @@ export const mockDate = async (callback: () => Promise<void>) => {
   global.Date = realDate;
 };
 
+export const mockSleep = (implementation: 'RESOLVED' | 'REJECTED') =>
+  jest
+    .spyOn(helpers, 'sleep')
+    .mockClear()
+    .mockImplementation(implementation === 'RESOLVED' ? resolved : rejected);
+
 export const conversationUsers = async () => {
   let from = await helpers.createUser();
   let to = await helpers.createUser();
