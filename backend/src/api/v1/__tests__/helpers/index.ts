@@ -321,6 +321,16 @@ export const testCookie = (headers: IncomingHttpHeaders, valid: boolean) => {
   }
 };
 
+export const testUserNotFound = async (query: GqlQueries | GqlMutations, headers?: IncomingHttpHeaders) => {
+  const user = await helpers.createUser(false);
+  const authInput: AuthInput = {
+    auth: user.auth,
+    username: user.username,
+  };
+  const requestError = await graphQLRequest<User>(query, { authInput }, headers);
+  testError(requestError, ResponseCode.INPUT_ERROR, query);
+};
+
 export const isMimeType = (type: 'image' | 'video' | 'audio', value?: string) => {
   if (!value) {
     return false;
@@ -494,6 +504,22 @@ export const uploadMediaFile = async (
     headers,
     mediaId,
   };
+};
+
+export const createAuthInput = async (save = true) => {
+  const user = await helpers.createUser(save);
+  const authInput: AuthInput = {
+    auth: user.auth,
+    username: user.username,
+  };
+  return { user, authInput };
+};
+
+export const updateAuthInput = async (authInput: AuthInput, user?: User) => {
+  user = user || (await helpers.createUser());
+  authInput.auth = user.auth;
+  authInput.username = user.username;
+  return user;
 };
 
 // 👇 queries helper
