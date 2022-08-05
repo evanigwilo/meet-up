@@ -130,6 +130,49 @@ export const graphQLRequest = async <T>(
   };
 };
 
+export const graphQLSocket = async <T>(args: {
+  subscription: Publish;
+  next: (value: T) => void;
+  callback: (user: User, iterator: SuperTestExecutionStreamingResult<any>) => void;
+}) => {
+  const { subscription, next, callback } = args;
+  // 👇 mock authenticated user with active session
+  const user = await helpers.createUser();
+  const spyDate = jest.spyOn(global.Date, 'now').mockReturnValue(0);
+  const spyAuth = jest.spyOn(auth, 'auth').mockReturnValue(user);
+
+  const iterator = await wsGql.subscribe(gqlSubscriptions[subscription]);
+
+  pubsub
+    .asyncIterator(subscription)
+    .next()
+    .then(({ value }) => {
+      next((value as KeyValue)[subscription] as unknown as T);
+      // iterator.close().then(() => {});
+    })
+    .then(() => {
+      // 👇 restore mocked methods
+      spyDate.mockRestore();
+      spyAuth.mockRestore();
+    });
+
+  /*
+    iterator
+      .next()
+      .then(({ data, errors, extensions }) => {
+        // console.log({ data, errors, extensions });
+        next((data as KeyValue)[subscription] as unknown as T);
+      })
+      .then(() => {
+        // 👇 restore mocked methods
+        spyDate.mockRestore();
+        spyAuth.mockRestore();
+      }); 
+  */
+
+  callback(user, iterator);
+};
+
 export const httpRequest = async <T>(
   method: 'GET' | 'POST' | 'DELETE',
   route: string,
