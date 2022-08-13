@@ -41,6 +41,17 @@ export const testObserver = (status: TestObserver) => {};
 
 export const randomNumber = (max = 30) => Math.floor(Math.random() * max);
 
+export const apiUrl = (socketProtocol = false, socketPath = false) =>
+  `${
+    socketProtocol
+      ? REACT_APP_SERVER_PROTOCOL === "http"
+        ? "ws"
+        : "wss"
+      : REACT_APP_SERVER_PROTOCOL
+  }://${REACT_APP_SERVER_HOST}:${REACT_APP_SERVER_PORT}${REACT_APP_SERVER_PATH}${
+    socketPath ? "/" : REACT_APP_SERVER_API_VERSION
+  }`;
+
 // 👇 error formatter for apollo message
 export const apolloErrorMessage = (
   error: Partial<ApolloError>,
