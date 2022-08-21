@@ -52,6 +52,13 @@ export const apiUrl = (socketProtocol = false, socketPath = false) =>
     socketPath ? "/" : REACT_APP_SERVER_API_VERSION
   }`;
 
+// 👇 websocket message helpers
+export const constructMessage = (message: SocketMessage) =>
+  JSON.stringify(message);
+
+export const deconstructMessage = (message: string) =>
+  JSON.parse(message) as SocketMessage;
+
 // 👇 error formatter for apollo message
 export const apolloErrorMessage = (
   error: Partial<ApolloError>,
