@@ -52,12 +52,112 @@ export const apiUrl = (socketProtocol = false, socketPath = false) =>
     socketPath ? "/" : REACT_APP_SERVER_API_VERSION
   }`;
 
+export const updateStyle = (
+  element: ChildNode | HTMLElement | null | undefined,
+  style: Partial<CSSStyleDeclaration>
+) => {
+  if (!element) {
+    return;
+  }
+
+  const node = element as HTMLElement;
+  for (const property in style) {
+    node.style[property] = style[property] || "";
+  }
+};
+
+export const updateProperty = (
+  element: HTMLElement | null | undefined,
+  style: Record<string, string>
+) => {
+  if (!element) {
+    return;
+  }
+
+  for (const property in style) {
+    element.style.setProperty(property, style[property]);
+  }
+};
+
 // 👇 websocket message helpers
 export const constructMessage = (message: SocketMessage) =>
   JSON.stringify(message);
 
 export const deconstructMessage = (message: string) =>
   JSON.parse(message) as SocketMessage;
+
+export const authPath = (user: Store["user"] | UserSub) =>
+  `/user/${user?.auth?.charAt(0)}/${user?.username}`;
+
+// 👇 authentication method mapper for shorter url
+export const authKey = (identifier: string) =>
+  identifier.startsWith(AuthType.FACEBOOK)
+    ? "f"
+    : identifier.startsWith(AuthType.GOOGLE)
+    ? "g"
+    : "p"; // AuthType.PASSWORD
+
+export const authProvider = (char?: string) =>
+  char === "f"
+    ? AuthType.FACEBOOK
+    : char === "g"
+    ? AuthType.GOOGLE
+    : AuthType.PASSWORD;
+
+export const avatarUrl = (user?: string, auth?: string) =>
+  `${axios.defaults.baseURL}/image/avatar/${
+    auth ? `${auth}/${user}` : user
+  }?${Date.now()}`;
+
+// 👇 auto format notification message
+export const messageFormat = (format: NotifyFormat) => {
+  const { type, name } = format;
+  switch (type) {
+    case "POST_CREATE":
+      return {
+        message: {
+          text: name + " created a post.",
+        },
+        icon: { text: "✍︎", font: "1.2em" },
+      };
+    case "FOLLOWING_YOU":
+      return {
+        message: {
+          text: name + " started following you.",
+        },
+        icon: { text: "👥", font: "1.2em" },
+      };
+    case "PROFILE_UPDATE":
+      return {
+        message: {
+          text: "You updated your profile.",
+        },
+        icon: { text: "⚐", font: "1.2em" },
+      };
+    case "MISSED_CALL":
+      return {
+        message: {
+          text: `Missed call from ${name}.`,
+        },
+        icon: { text: "✆", font: "1.5em" },
+      };
+    case "POST_LIKE":
+      return {
+        message: {
+          text: name + " liked your post.",
+        },
+        icon: { text: "👍", font: "1em" },
+      };
+
+    default: // NEW_MESSAGE
+      return {
+        message: {
+          text: name + " sent you a message.",
+        },
+        icon: { text: "@", font: "0.9em" },
+      };
+  }
+};
 
 // 👇 error formatter for apollo message
 export const apolloErrorMessage = (
