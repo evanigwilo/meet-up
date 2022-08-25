@@ -79,6 +79,27 @@ export const updateProperty = (
   }
 };
 
+export const isMimeType = (
+  type: "image" | "video" | "audio",
+  value?: string | null
+) => {
+  if (!value) {
+    return false;
+  }
+  switch (type) {
+    case "image":
+      return /^image/i.test(value);
+
+    case "video":
+      return /^video/i.test(value);
+
+    case "audio":
+      return /^audio/i.test(value);
+    default:
+      return false;
+  }
+};
+
 // 👇 websocket message helpers
 export const constructMessage = (message: SocketMessage) =>
   JSON.stringify(message);
