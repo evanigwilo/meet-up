@@ -79,6 +79,29 @@ export const updateProperty = (
   }
 };
 
+export const navigationLink = (
+  navigate: ReturnType<typeof useNavigate>,
+  type: NotificationType["type"],
+  identifier: string
+) => {
+  switch (type) {
+    case "POST_CREATE":
+    case "POST_LIKE":
+      navigate(`/post/${identifier}`);
+      break;
+    case "PROFILE_UPDATE":
+    case "FOLLOWING_YOU":
+      const authPath =
+        "/user/" +
+        authKey(identifier) +
+        identifier.substring(identifier.indexOf("/"));
+      navigate(authPath);
+      break;
+    default:
+      break;
+  }
+};
+
 export const isMimeType = (
   type: "image" | "video" | "audio",
   value?: string | null
