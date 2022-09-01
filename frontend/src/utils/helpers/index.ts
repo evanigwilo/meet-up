@@ -52,6 +52,10 @@ export const apiUrl = (socketProtocol = false, socketPath = false) =>
     socketPath ? "/" : REACT_APP_SERVER_API_VERSION
   }`;
 
+export const mediaUrl = (category: string, id: string, media?: string | null) =>
+  axios.defaults.baseURL +
+  `/${isMimeType("image", media) ? "image" : "media"}/${category}/${id}`;
+
 export const updateStyle = (
   element: ChildNode | HTMLElement | null | undefined,
   style: Partial<CSSStyleDeclaration>
@@ -133,6 +137,13 @@ export const shuffleArray = <T>(array: T[]) => {
   }
   return array;
 };
+
+export const formatTime = (date: string) =>
+  new Date(Number(date)).toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: true,
+  });
 
 // 👇 websocket message helpers
 export const constructMessage = (message: SocketMessage) =>
