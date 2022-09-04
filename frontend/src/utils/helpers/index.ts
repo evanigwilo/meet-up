@@ -225,6 +225,10 @@ export const messageFormat = (format: NotifyFormat) => {
   }
 };
 
+// 👇 number format for higher digits
+export const formatStats = (number: number) =>
+  number >= 1000 ? numeral(number).format("0.0a") : number;
+
 // 👇 error formatter for apollo message
 export const apolloErrorMessage = (
   error: Partial<ApolloError>,
