@@ -36,6 +36,8 @@ export const secsToMs = (secs: number) => secs * 1000;
 export const sleep = (secs: number) =>
   new Promise((handler) => window.setTimeout(handler, secsToMs(secs)));
 
+export const uniqueId = () => faker.helpers.unique(faker.datatype.uuid);
+
 // 👇 helper to monitor mutation and method calls
 export const testObserver = (status: TestObserver) => {};
 
