@@ -177,6 +177,9 @@ export const avatarUrl = (user?: string, auth?: string) =>
     auth ? `${auth}/${user}` : user
   }?${Date.now()}`;
 
+export const trimTitle = (title: string, maxWords = 100) =>
+  title.length > maxWords ? title.substring(0, maxWords) + "..." : title;
+
 // 👇 auto format notification message
 export const messageFormat = (format: NotifyFormat) => {
   const { type, name } = format;
