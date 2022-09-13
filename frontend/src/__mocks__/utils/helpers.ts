@@ -1136,3 +1136,174 @@ export const generateUsers = (
     ...generateLastPage(query, key, total, pages, authInput && { authInput }),
   ];
 };
+
+export const generateMessages = (
+  total = 10,
+  pages = 1,
+  id: string,
+  args?: Partial<{
+    from: UserSub;
+    to: UserSub;
+    media: string;
+    missed: boolean;
+    deleted: boolean;
+    reaction: boolean;
+    error: string;
+  }>
+) => {
+  const key = "getMessages";
+  const query = gqlQuery(key);
+
+  if (args?.error) {
+    return [
+      {
+        request: {
+          query,
+          variables: {
+            id,
+            offset: 0,
+          },
+        },
+        result: {
+          errors: createError(key, args.error, {
+            code: "UNAUTHENTICATED",
+          }),
+        },
+      },
+    ];
+  }
+
+  const loadPages = Array.from({ length: pages }).map((_, index) => {
+    const messages: MessageType[] = [];
+    for (let i = 0; i < total; i++) {
+      const message = createMessage("NEW_MESSAGE", {
+        from: args?.from,
+        to: args?.to,
+        deleted: args?.deleted,
+        media: args?.media,
+        missed: args?.missed,
+        createdDate: testDate,
+      });
+      if (args?.reaction) {
+        message.reactions = [];
+        const reaction = {
+          createdDate: testTime,
+          message,
+        };
+        message.reactions.push({
+          ...reaction,
+          id: uniqueId(),
+          reaction: "like",
+          user: message.from,
+        });
+        message.reactions.push({
+          ...reaction,
+          id: uniqueId(),
+          reaction: "love",
+          user: message.to,
+        });
+      }
+
+      messages.push(message);
+    }
+    const variables: KeyValue<string | number> = {
+      id,
+      offset: total * index,
+    };
+
+    return {
+      request: {
+        query,
+        variables,
+      },
+      result: {
+        data: {
+          [key]: messages,
+        },
+      },
+    };
+  });
+
+  return [...loadPages, ...generateLastPage(query, key, total, pages, { id })];
+};
+
+export const generateConversations = (
+  total = 10,
+  pages = 1,
+  args?: Partial<{
+    from: UserSub;
+    to: UserSub;
+    seen: boolean;
+    media: string;
+    missed: boolean;
+    deleted: boolean;
+    error: string;
+  }>
+) => {
+  const key = "getConversations";
+  const query = gqlQuery(key);
+
+  if (args?.error) {
+    return [
+      {
+        request: {
+          query,
+          variables: {
+            offset: 0,
+          },
+        },
+        result: {
+          errors: createError(key, args.error, {
+            code: "UNAUTHENTICATED",
+          }),
+        },
+      },
+    ];
+  }
+
+  const loadPages = Array.from({ length: pages }).map((_, index) => {
+    const conversations: ConversationType[] = [];
+    for (let i = 0; i < total; i++) {
+      const { id, from, to, body, deleted, media, missed, createdDate } =
+        createMessage("NEW_MESSAGE", {
+          from: args?.from,
+          to: args?.to,
+          deleted: args?.deleted,
+          media: args?.media,
+          missed: args?.missed,
+          createdDate: testDate,
+        });
+      conversations.push({
+        id: uniqueId(),
+        from,
+        to,
+        seen: args?.seen || false,
+        message: {
+          id,
+          body,
+          deleted,
+          media,
+          missed,
+          createdDate,
+        },
+      });
+    }
+    const variables: KeyValue<string | number> = {
+      offset: total * index,
+    };
+
+    return {
+      request: {
+        query,
+        variables,
+      },
+      result: {
+        data: {
+          [key]: conversations,
+        },
+      },
+    };
+  });
+
+  return [...loadPages, ...generateLastPage(query, key, total, pages)];
+};
