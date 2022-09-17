@@ -1307,3 +1307,31 @@ export const generateConversations = (
 
   return [...loadPages, ...generateLastPage(query, key, total, pages)];
 };
+
+export const generateFindUsers = (handle: string, total = 5) => {
+  const key = "findUser";
+  const query = gqlQuery(key);
+  const users: UserSub[] = [];
+  for (let i = 0; i < total; i++) {
+    users.push(createUserSub());
+  }
+
+  const response = {
+    request: {
+      query,
+      variables: {
+        handle,
+      },
+    },
+    result: {
+      data: {
+        [key]: users,
+      },
+    },
+  };
+
+  return {
+    users,
+    response,
+  };
+};
