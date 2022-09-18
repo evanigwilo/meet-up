@@ -252,6 +252,52 @@ export const testHandleSearch = async (
   }
 };
 
+export const testFailedUpload = async (attachmentId: string, tag: Tag) => {
+  // 👇 remove media icon should be active
+  const remove = screen.getByText(findCloseElement);
+  expect(remove).toHaveStyle(enabledElement);
+  // 👇 simulate removing media
+  fireEvent.click(remove);
+  await wait(async () => {
+    const mediaViewer = screen.getByTestId(
+      `attachment-${attachmentId}-media-file`
+    );
+    // 👇 trigger media 'transitionEnd' event to close media
+    fireEvent.transitionEnd(mediaViewer);
+    await wait(() => {
+      // 👇 media & remove element should not exist
+      testNoRemoveOrMediaElement(tag);
+    });
+  });
+};
+
+export const testMediaElement = async (tag: Tag, src: string) => {
+  // 👇 media element should not be visible
+  const mediaElement = getMediaElement(tag, src);
+  expect(mediaElement).toBeInTheDocument();
+  expect(mediaElement).not.toBeVisible();
+  // 👇 simulate load event if image or playable media
+  if (tag === "source") {
+    fireEvent.loadedMetadata(mediaElement!);
+  } else {
+    fireEvent.load(mediaElement!);
+  }
+  // 👇 check media visibility
+  await wait(() => {
+    expect(mediaElement).toBeVisible();
+  });
+
+  return mediaElement;
+};
+
+export const testNoRemoveOrMediaElement = (tag: Tag) => {
+  // 👇 media element should not exist
+  const mediaElement = getMediaElement(tag, objectUrl);
+  // 👇 remove media icon should not exist
+  const remove = screen.queryByText(findCloseElement);
+  expect(mediaElement || remove).toBeNull();
+};
+
 export const findTextContent =
   (text: string, tag = "span") =>
   (content: string, element: Element | null) =>
@@ -292,6 +338,8 @@ export const findByAttribute =
     element?.tagName.toLowerCase() === tag &&
     element.getAttribute(attribute) === value;
 
+export const findInputFileElement = findByAttribute("input", "type", "file");
+
 // 👇 waitFor helper for waiting for assertion to be satisfied before proceeding
 export const wait = async (callback: () => void, timeout = 5) => {
   await waitFor(() => callback(), {
@@ -322,7 +370,156 @@ export const createFile = (name: string, type: string, size: number) => {
   return file;
 };
 
-export const findInputFileElement = findByAttribute("input", "type", "file");
+export const typeInput = async (
+  placeholderText: string,
+  type: PostType | MessageType
+) => {
+  // 👇 check text input
+  const input = screen.getByPlaceholderText(placeholderText);
+  expect(input).toBeVisible();
+  expect(input).toHaveValue("");
+  // 👇 simulate typing in input
+  userEvent.type(input, type.body!);
+  await wait(() => {
+    // 👇 input should have body value
+    expect(input).toHaveValue(type.body);
+  });
+};
+
+export const sendInput = async (
+  placeholderText: string,
+  type: PostType | MessageType | string,
+  callback: () => void
+) => {
+  // 👇 check text input
+  const input = screen.getByPlaceholderText(placeholderText);
+  expect(input).toBeVisible();
+  // 👇 check send button
+  const send = screen.getByText(findTextContent("➢"));
+  expect(send).toBeVisible();
+  if (typeof type === "string") {
+    // 👇 simulate clearing in input
+    userEvent.clear(input);
+    // 👇 error text display should not exist
+    let errorElement = screen.queryByText(findErrorText(type));
+    expect(errorElement).toBeNull();
+    // 👇 simulate clicking on sending
+    fireEvent.click(send);
+    // 👇 error text display should be visible
+    errorElement = await screen.findByText(findErrorText(type));
+    expect(errorElement).toBeVisible();
+  } else {
+    expect(input).toHaveValue(type.body!);
+    // 👇 simulate clicking on sending
+    fireEvent.click(send);
+    await wait(async () => {
+      // 👇 check after sending
+      await callback();
+      // 👇 input should have no value
+      expect(input).toHaveValue("");
+    });
+  }
+};
+
+export const loadFileForSuccessfulUpload = async (args: {
+  name: string;
+  type: string;
+  tag: Tag;
+  attachmentId: string;
+  spyAxiosPost: jest.SpyInstance;
+}) => {
+  // 👇 get upload input
+  const upload = screen.getByText<HTMLInputElement>(findInputFileElement);
+  expect(upload).toHaveAttribute("hidden", "");
+  // 👇 remove media icon should not exist
+  let remove = screen.queryByText(findCloseElement);
+  expect(remove).toBeNull();
+  /*
+      const image = path.join(__dirname, "../../images/", "Lake-Water.jpg");
+      const buffer = readFileSync(image);
+    */
+  // 👇 create test image of a valid size (1 MB)
+  const file = createFile(args.name, args.type, 1);
+  // 👇 simulate file change
+  await changeFile(upload, file);
+  // 👇 remove media icon should not be active
+  remove = screen.getByText(findCloseElement);
+  expect(remove).toHaveStyle(disabledElement);
+  // 👇 input controller should not be active
+  const attachment = screen.getByTestId(`attachment-${args.attachmentId}`);
+  expect(attachment).toHaveStyle({
+    "pointer-events": "none",
+  });
+  await testMediaElement(args.tag, objectUrl);
+  // 👇 remove media icon should be active
+  expect(remove).toHaveStyle(enabledElement);
+  // 👇 input controller should be active
+  expect(attachment).toHaveStyle(enabledElement);
+  // 👇 check progress indicators before upload
+  const mediaViewer = screen.getByTestId(
+    `attachment-${args.attachmentId}-media-file`
+  );
+  const spinner = mediaViewer.querySelector<HTMLDivElement>(".spinner");
+  const percent = mediaViewer.querySelector<HTMLSpanElement>(".percent");
+  expect(spinner).toHaveClass("spinner hide");
+  expect(percent).toHaveTextContent("");
+  // 👇 mock success upload request
+  args.spyAxiosPost.mockImplementationOnce(
+    (url: string, data: unknown, config?: AxiosRequestConfig) => {
+      // 👇 check progress indicators at start of upload
+      expect(spinner).toHaveClass("spinner show upload progress");
+      expect(percent).toHaveTextContent("0 %");
+      // 👇 this mocks a request which is always at 50% progress
+      mockUploadProgress(config);
+      return Promise.resolve(axiosData({}));
+    }
+  );
+};
+
+export const loadFileForFailedUpload = async (args: {
+  name: string;
+  type: string;
+  tag: Tag;
+  spyAxiosPost: jest.SpyInstance;
+}) => {
+  const error = await errorChangeFile(args.name, args.type, args.spyAxiosPost);
+  await testMediaElement(args.tag, objectUrl);
+  return error;
+};
+
+export const getMediaElement = (tag: Tag, src: string) => {
+  const mediaSource = screen.queryByText<HTMLImageElement>(
+    findMediaElement(src, tag)
+  );
+  const mediaElement =
+    tag === "source" ? mediaSource?.parentElement : mediaSource;
+
+  return mediaElement;
+};
+
+export const errorChangeFile = async (
+  name: string,
+  type: string,
+  spyAxiosPost: jest.SpyInstance
+) => {
+  const error = "File exceeds maximum upload size (1MB).";
+  // 👇 mock error upload post request
+  spyAxiosPost.mockImplementationOnce(
+    (url: string, data: unknown, config?: AxiosRequestConfig) =>
+      Promise.reject(axiosError({ message: error }))
+  );
+  // 👇 define file size exceeding the maximum limit of 1 MB to 2 MB
+  const file = createFile(name, type, 2);
+  // 👇 get upload input
+  const upload = screen.getByText<HTMLInputElement>(findInputFileElement);
+  // 👇 error text display should not exist
+  const errorElement = screen.queryByText(findErrorText(error));
+  expect(errorElement).toBeNull();
+  // 👇 simulate file change
+  await changeFile(upload, file);
+
+  return error;
+};
 
 const createError = (
   query: string,
