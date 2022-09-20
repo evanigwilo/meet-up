@@ -1532,3 +1532,58 @@ export const generateFindUsers = (handle: string, total = 5) => {
     response,
   };
 };
+
+export const generateNotifications = (
+  total = 10,
+  pages = 1,
+  args?: Partial<{
+    type: NotificationType["type"];
+    identifier: string;
+    error: string;
+  }>
+) => {
+  const key = "getNotifications";
+  const query = gqlQuery(key);
+
+  if (args?.error) {
+    return [
+      {
+        request: {
+          query,
+          variables: {
+            offset: 0,
+          },
+        },
+        result: {
+          errors: createError(key, args.error, {
+            code: "UNAUTHENTICATED",
+          }),
+        },
+      },
+    ];
+  }
+
+  const loadPages = Array.from({ length: pages }).map((_, index) => {
+    const notifications: NotificationType[] = [];
+    for (let i = 0; i < total; i++) {
+      notifications.push(createNotification(args?.type!, args?.identifier!));
+    }
+    const variables: KeyValue<string | number> = {
+      offset: total * index,
+    };
+
+    return {
+      request: {
+        query,
+        variables,
+      },
+      result: {
+        data: {
+          [key]: notifications,
+        },
+      },
+    };
+  });
+
+  return [...loadPages, ...generateLastPage(query, key, total, pages)];
+};
