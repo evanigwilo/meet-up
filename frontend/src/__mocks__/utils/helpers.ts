@@ -521,6 +521,48 @@ export const errorChangeFile = async (
   return error;
 };
 
+export const viewAllComments = async (
+  post: PostType,
+  total: number,
+  pages: number,
+  commentUpdate: number,
+  postDetail?: "post" | "reply"
+) => {
+  const findViewComments = findTextContent("View more comments");
+  // 👇 comments icon should be visible
+  let commentIcon = screen.getByTestId(`commentIcon-${post.id}`);
+  expect(commentIcon).toBeVisible();
+  expect(Number(commentIcon.textContent)).toEqual(post.stats.comments);
+
+  let moreComments = screen.queryByText(findViewComments);
+  if (!postDetail) {
+    // 👇 'view more comments' option should not exist
+    expect(moreComments).toBeNull();
+  }
+  // 👇 simulate clicking on comments icon to show comments
+  fireEvent.click(commentIcon);
+  const postIsReply = postDetail === "reply" ? 1 : 0;
+  // 👇 simulate clicking 'view more comments' till no more comments to view
+  for (let i = 1; i < pages; i++) {
+    await wait(() => {
+      // 👇 find all comments element in document
+      const queryComments = screen.getAllByTestId(/^reply-/);
+      expect(queryComments).toHaveLength(total * i + postIsReply);
+      // 👇 comments icon should have updated value of total comments after fetching comments
+      commentIcon = screen.getByTestId(`commentIcon-${post.id}`);
+      expect(Number(commentIcon.textContent)).toEqual(commentUpdate);
+      // 👇 'view more comments' option should be visible
+      moreComments = screen.queryByText(findViewComments);
+      expect(moreComments).toBeVisible();
+      // 👇 simulate clicking on 'view more comments' option
+      fireEvent.click(moreComments!);
+    });
+  }
+  // 👇 'view more comments' option should not exist after viewing all comments
+  moreComments = screen.queryByText(findViewComments);
+  expect(moreComments).toBeNull();
+};
+
 const createError = (
   query: string,
   error?: string,
