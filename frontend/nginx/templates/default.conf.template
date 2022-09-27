@@ -1,0 +1,81 @@
+# run as a less privileged user for security reasons.
+
+# user nginx;
+
+# worker_threads to run;
+# "auto" sets it to the #CPU_cores available in the system for the best performance.
+
+# worker_processes auto;
+
+# number of simultaneous connections
+# max clients => worker_processes * worker_connections
+# e.g. worker_processes of 2 and worker_connections of 1024 = 2048 maximum connections 
+
+# events { 
+#   worker_connections 1024;  # increase if you have lots of clients
+# }
+
+upstream servers {
+  server ${NGINX_SERVER_1};
+  server ${NGINX_SERVER_2};
+}
+
+# connection header is correctly set to close when the Upgrade header in the request is set to ''
+map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
+server {
+  # the domain name it will serve for
+  server_name ${NGINX_HOST};
+
+  # hide nginx version information.
+  server_tokens off;
+
+  listen 80;
+  # IPV6 configuration
+  listen [::]:80;
+
+  location / {
+    root   /usr/share/nginx/html;
+    index  index.html index.htm;
+    try_files $uri $uri/ /index.html;
+  }
+
+  location /api/ {
+    # resolver 127.0.0.11;
+    proxy_set_header Host $host;
+    proxy_set_header Cookie $http_cookie;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Server $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_redirect off;
+    
+    # for NGINX to send the Upgrade request from the client to the backend server, 
+    # the Upgrade and Connection headers must be set explicitly,
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+
+    # max file upload size
+    client_max_body_size 50m;
+    # disable buffering the upload
+    proxy_request_buffering off;
+    proxy_buffering off;
+
+    proxy_pass http://servers/;
+  }
+
+  error_page 500 502 503 504 /50x.html;
+  location = /50x.html {
+    root /usr/share/nginx/html;
+  }
+ 
+  error_page 400 401 403 404 /40x.html;
+   location = /40x.html {
+    root /usr/share/nginx/html;
+  }
+}
