@@ -1,0 +1,25 @@
+version: "3"
+
+services:
+  web-app:
+    container_name: web-app
+    # env_file:
+    #   - .env.local
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - ./src:/frontend/src:ro
+      - ./public:/frontend/public:ro
+    command: [ "yarn", "start" ]
+    # depends_on:
+    #   api-server:
+    #     condition: service_healthy
+    ports:
+      - ${PORT}:${PORT}
+    networks:
+      - front-tier
+    restart: unless-stopped
+
+networks:
+  front-tier:

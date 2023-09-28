@@ -1,0 +1,8 @@
+version: "3"
+
+# NOTE: include -f docker-compose.dev.yml compose file before this file
+services:
+  web-app:
+    restart: 'no'
+    # with extra args when running tests based on environment
+    command: yarn test ${TEST_ARGS}
